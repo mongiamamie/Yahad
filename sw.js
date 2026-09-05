@@ -1,19 +1,20 @@
 /* =========================================================================
    Cache hors ligne de l'écran des affiches.
 
-   Deux stratégies, parce que les deux besoins sont opposés :
+   Version 2. La première mettait l'application en réserve et la servait
+   depuis le cache par défaut : rapide, mais une mise en ligne ne parvenait
+   jamais aux écrans déjà installés sans changer ce numéro de version. Piège
+   trop facile à oublier.
 
-   — le classeur des défunts : le réseau d'abord. Une liste fraîche prime
-     toujours ; à défaut, on ressort la dernière connue. C'est ce qui permet à
-     l'écran de repartir sur la bonne liste après une coupure de courant, même
-     si le Wi-Fi n'est pas encore revenu.
-
-   — l'application elle-même : le cache d'abord, mise à jour en arrière-plan.
-     L'affichage démarre instantanément et sans réseau, et prend la nouvelle
-     version au chargement suivant.
+   Une seule règle désormais, pour tous les fichiers du site : on interroge le
+   réseau, mais on ne lui laisse que trois secondes quand une copie existe.
+   Passé ce délai, on sert la copie et l'on met le cache à jour en arrière-plan.
+   L'écran démarre donc vite, fonctionne sans réseau, et prend toute mise en
+   ligne dès qu'il en a le moyen.
    ========================================================================= */
-const VERSION = 'affiches-v1';
+const VERSION = 'affiches-v2';
 const ESSENTIELS = ['./', './index.html', './defunts.xlsx'];
+const PATIENCE = 3000;
 
 self.addEventListener('install', evt => {
   evt.waitUntil((async () => {
@@ -49,45 +50,31 @@ self.addEventListener('fetch', evt => {
   const url = new URL(requete.url);
   if (url.origin !== location.origin) return;     // l'extérieur passe librement
 
-  const estClasseur = /\.(xlsx|xls|csv)$/i.test(url.pathname);
-
   evt.respondWith((async () => {
     const cache = await caches.open(VERSION);
     const cle = cleDeCache(requete);
+    const garde = await cache.match(cle);
 
-    if (estClasseur){
-      const garde = await cache.match(cle);
-      /* Course contre la montre : un reseau mort ne refuse pas toujours la
-         connexion, il fait attendre. On ne laisse au reseau que trois secondes
-         quand une copie existe, sinon l'ecran resterait vide de longues
-         secondes apres une coupure de courant. */
-      const reseau = (async () => {
-        const reponse = await fetch(requete, {cache: 'no-store'});
-        if (!reponse.ok) throw new Error('reponse ' + reponse.status);
-        await cache.put(cle, reponse.clone());
-        return reponse;
-      })();
-      if (!garde){
-        try { return await reseau; }
-        catch (e){ return new Response('', {status: 504, statusText: 'Hors ligne'}); }
-      }
-      const patience = new Promise(r => setTimeout(() => r(null), 3000));
-      const gagnant = await Promise.race([reseau.catch(() => null), patience]);
-      if (gagnant) return gagnant;
-      reseau.catch(() => {});          // la mise a jour peut aboutir plus tard
-      return garde;
+    const reseau = (async () => {
+      const reponse = await fetch(requete, {cache: 'no-store'});
+      if (!reponse.ok) throw new Error('reponse ' + reponse.status);
+      await cache.put(cle, reponse.clone());
+      return reponse;
+    })();
+
+    // Rien en réserve : il faut bien attendre le réseau.
+    if (!garde){
+      try { return await reseau; }
+      catch (e){ return new Response('', {status: 504, statusText: 'Hors ligne'}); }
     }
 
-    const enCache = await cache.match(cle);
-    const rafraichir = fetch(requete)
-      .then(async reponse => {
-        if (reponse.ok) await cache.put(cle, reponse.clone());
-        return reponse;
-      })
-      .catch(() => null);
+    /* Une copie existe. Un réseau en panne ne refuse pas toujours la
+       connexion, il fait attendre : on ne lui accorde que trois secondes. */
+    const patience = new Promise(r => setTimeout(() => r(null), PATIENCE));
+    const gagnant = await Promise.race([reseau.catch(() => null), patience]);
+    if (gagnant) return gagnant;
 
-    if (enCache){ rafraichir; return enCache; }    // mise à jour sans attendre
-    return (await rafraichir)
-        || new Response('', {status: 504, statusText: 'Hors ligne'});
+    reseau.catch(() => {});          // la mise à jour peut aboutir plus tard
+    return garde;
   })());
 });

@@ -734,6 +734,7 @@ body.repos, body.repos *{cursor:none}
       <button id="btnPlein">Plein écran</button>
       <button id="btnEcran2">Préparer le fichier pour l'écran</button>
       <button id="btnSaisie">Ouvrir la page de saisie</button>
+      <button id="btnVider">Vider le cache et recharger</button>
     </div>
     <div class="separateur"></div>
     <p class="note" id="etatSynchro"></p>
@@ -2047,6 +2048,19 @@ function initReglages(){
   $('#btnFichier2').onclick = () => $('#fichier').click();
   $('#btnEcran2').onclick = exporterPourEcran;
   $('#btnSaisie').onclick = () => { location.href = 'saisie.html'; };
+
+  /* Dépannage : sur un boîtier de télévision, on n'a pas d'outils de
+     développement sous la main pour forcer une mise à jour. */
+  $('#btnVider').onclick = async () => {
+    signaler('Vidage du cache…', 6000);
+    try {
+      if ('caches' in window)
+        for (const cle of await caches.keys()) await caches.delete(cle);
+      if ('serviceWorker' in navigator)
+        for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+    } catch (e){ /* rien à vider, ou contexte qui ne le permet pas */ }
+    location.reload();
+  };
   $('#btnSynchro').onclick = async () => {
     signaler('Synchronisation…', 4000);
     if (!await synchroniser()) majEtatSynchro();
