@@ -733,6 +733,7 @@ body.repos, body.repos *{cursor:none}
       <button id="btnFichier2">Changer de fichier</button>
       <button id="btnPlein">Plein écran</button>
       <button id="btnEcran2">Préparer le fichier pour l'écran</button>
+      <button id="btnSaisie">Ouvrir la page de saisie</button>
     </div>
     <div class="separateur"></div>
     <p class="note" id="etatSynchro"></p>
@@ -781,6 +782,9 @@ const CONFIG = {
      normaux : celui-ci reste la référence. */
   pleinEcranAuto: true,      // bascule au premier clic ou à la première touche
   masquerCurseur: true,      // le curseur disparaît après trois secondes d'inertie
+  /* Un double clic, ou une double tape, ouvre la page de saisie. Passez à
+     false si l'écran est tactile et que des passants la déclenchent. */
+  doubleClicSaisie: true,
   horaires:      true,
   lieu: {nom:'Garges-lès-Gonesse', lat:48.9728, lon:2.4008, alt:57,
          tz:'Europe/Paris', pays:'FR'},
@@ -2042,6 +2046,7 @@ function initReglages(){
   $('#btnPlein').onclick = basculerPleinEcran;
   $('#btnFichier2').onclick = () => $('#fichier').click();
   $('#btnEcran2').onclick = exporterPourEcran;
+  $('#btnSaisie').onclick = () => { location.href = 'saisie.html'; };
   $('#btnSynchro').onclick = async () => {
     signaler('Synchronisation…', 4000);
     if (!await synchroniser()) majEtatSynchro();
@@ -2124,6 +2129,15 @@ function premierGeste(){
   garderEcranAllume();
 }
 addEventListener('pointerdown', premierGeste, {once:true});
+
+/* Double clic, ou double tape, n'importe où sur les affiches : on passe à la
+   page de saisie. Le panneau de réglages et l'écran d'accueil sont épargnés,
+   sans quoi un double clic sur un bouton ferait quitter l'affichage. */
+addEventListener('dblclick', e => {
+  if (!CONFIG.doubleClicSaisie) return;
+  if (e.target.closest('#reglages') || e.target.closest('#accueil')) return;
+  location.href = 'saisie.html';
+});
 addEventListener('keydown',     premierGeste, {once:true});
 
 // L'onglet remis au premier plan perd son verrou de veille : on le reprend.
